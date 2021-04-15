@@ -2,6 +2,7 @@ import gym
 import numpy as np
 
 env = gym.make("CartPole-v1")
+
 observation = env.reset()
 
 print (env.action_space)
