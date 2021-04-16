@@ -25,10 +25,6 @@ class NeuralNetwork(nn.Module):
             nn.ReLU(),
             nn.Linear(layers, layers),
             nn.ReLU(),
-            nn.Linear(layers, 45),
-            nn.ReLU(),
-            nn.Linear(45, layers),
-            nn.ReLU(),
             nn.Linear(layers, layers),
             nn.ReLU(),
             nn.Linear(layers, layers_end),
@@ -49,7 +45,7 @@ optimizer = torch.optim.SGD(model.parameters(), lr=.0001)
 
 def train(env, model, loss_fn, optimizer):
     observation = env.reset()
-    size = 10000
+    size = 1000
     for i in range(size+1):
         # Using env to get X and y
         if np.random.rand() > .5:
@@ -89,14 +85,19 @@ def test(env, model):
     observation = env.reset()
     model.eval()
 
-    for i in range(500):
-        env.render()
+    episodes = 10
+    for i in range(episodes):
+        total_reward = 0
+        done = False
+        while not done:
+            env.render()
+            action = decide(model, observation)
 
-        action = decide(model, observation)
-
-        observation, reward, done, info = env.step(action)
-        if done:
-           observation = env.reset()
+            observation, reward, done, info = env.step(action)
+            total_reward += reward
+            if done:
+                observation = env.reset()
+                print(f"episode {i}, reward: {total_reward}")
 
 ############## Application
 
