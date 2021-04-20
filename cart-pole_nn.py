@@ -18,18 +18,17 @@ class NeuralNetwork(nn.Module):
     def __init__(self):
         super(NeuralNetwork, self).__init__()
         self.flatten = nn.Flatten()
-        layers = 30
-        layers_end = 20
+        neurons = 30
         self.network = nn.Sequential(
-            nn.Linear(5, layers), # 4 for observations + 1 for action
+            nn.Linear(5, neurons), # 4 for observations + 1 for action
             nn.ReLU(),
-            nn.Linear(layers, layers),
+            nn.Linear(neurons, neurons),
             nn.ReLU(),
-            nn.Linear(layers, layers),
+            nn.Linear(neurons, neurons),
             nn.ReLU(),
-            nn.Linear(layers, layers_end),
+            nn.Linear(neurons, neurons-10),
             nn.ReLU(),
-            nn.Linear(layers_end, 1),
+            nn.Linear(neurons-10, 1),
             nn.ReLU()
         )
 
@@ -43,24 +42,46 @@ print(model)
 loss_fn = nn.L1Loss()
 optimizer = torch.optim.SGD(model.parameters(), lr=.0001)
 
-def train(env, model, loss_fn, optimizer):
+def train(env, model, loss_fn, optimizer, epoch):
     observation = env.reset()
-    size = 1000
+    replay_size = 2000
+    size = 2000
+    eps = .4
+    discount = .05
+    replay = []
     for i in range(size+1):
         # Using env to get X and y
-        if np.random.rand() > .5:
+        if np.random.rand() > eps:
             action = decide(model, observation)
         else:   
             action = env.action_space.sample() # Random action
 
         X = torch.tensor([observation[i] for i in range(4)] + [float(action)])
-
         observation, reward, done, info = env.step(action)
-        y = torch.tensor([reward])
+
+        if epoch == 0:
+            discount_now = i / size * discount 
+        else:
+            discount_now = discount
+
+        # Finding q
+        X_next = torch.tensor([observation[i] for i in range(4)] + [0.])
+        q = reward + discount_now * model(X_next)[0]
+        X_next = torch.tensor([observation[i] for i in range(4)] + [1.])
+        q = min(q, reward + discount_now * model(X_next)[0])
+
+        if reward == 0: q = 0
+
+        y = torch.tensor([q])
+
+        transition = (X,y)
+
+        replay.insert(0, transition)
+        replay = replay[:replay_size]
+
         if done:
             observation = env.reset()
 
-        # Compute prediction error
         pred = model(X)
         loss = loss_fn(pred, y)
 
@@ -69,16 +90,30 @@ def train(env, model, loss_fn, optimizer):
         loss.backward()
         optimizer.step()
 
+        # Compute prediction error
+        if len(replay) > 100:
+            for _ in range(10):
+                X,y = replay[np.random.randint(len(replay))]
+                pred = model(X)
+                loss = loss_fn(pred, y)
+
+                # Backpropagation
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
         if i % 100 == 0:
             loss, current = loss.item(), i
             print(f"loss: {loss:.15f}  [{current:>5d}/{size:>5d}]")
 
 def decide(network, observation):
     X = torch.tensor([observation[i] for i in range(4)] + [0.])
-    left_reward = network(X)
+    left_state = network(X)
     X[4] = 1.
-    right_reward = network(X)
-    action = 1 if right_reward > left_reward else 0
+    right_state = network(X)
+
+    action = 1 if abs(right_state[0]) > abs(left_state[0]) else 0
+
     return action
 
 def test(env, model):
@@ -90,7 +125,7 @@ def test(env, model):
         total_reward = 0
         done = False
         while not done:
-            env.render()
+            # env.render()
             action = decide(model, observation)
 
             observation, reward, done, info = env.step(action)
@@ -110,7 +145,7 @@ print (env.observation_space)
 epochs = 100
 for t in range(epochs):
     print(f"Epoch {t+1}\n-------------------------------")
-    train(env, model, loss_fn, optimizer)
+    train(env, model, loss_fn, optimizer, t)
     test(env, model)
 
 print("Done!")
